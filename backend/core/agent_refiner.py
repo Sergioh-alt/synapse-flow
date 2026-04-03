@@ -143,16 +143,20 @@ class AgentRefiner:
             except ImportError:
                 self._use_mock = True
 
+        from core.llm_factory import ProviderFactory
+        self._factory = ProviderFactory
+
     # -------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------
 
-    def refine(self, raw_idea: str, max_iterations: int = 1) -> dict:
+    def refine(self, raw_idea: str, provider_name: str = "litellm", max_iterations: int = 1) -> dict:
         """
         Run the full 3-pass refinement pipeline.
 
         Args:
             raw_idea: The user's unstructured idea or prompt.
+            provider_name: 'litellm', 'groq', or 'ollama'.
             max_iterations: Number of critique→revise cycles (default 1).
 
         Returns:
@@ -163,7 +167,7 @@ class AgentRefiner:
         if self._use_mock:
             result = self._mock_pipeline(raw_idea, max_iterations)
         else:
-            result = self._live_pipeline(raw_idea, max_iterations)
+            result = self._live_pipeline(raw_idea, provider_name, max_iterations)
 
         result["duration_seconds"] = round(time.monotonic() - start, 2)
         return result
@@ -182,39 +186,42 @@ class AgentRefiner:
             "proposed": _MOCK_PROPOSE_TEMPLATE.format(idea=raw_idea),
             "critique": _MOCK_CRITIQUE_TEMPLATE.format(idea=raw_idea),
             "final": _MOCK_FINAL_TEMPLATE.format(idea=raw_idea),
+            "tokens_used": 150
         }
 
     # -------------------------------------------------------------------
     # Live pipeline (LiteLLM → OpenAI)
     # -------------------------------------------------------------------
 
-    def _live_pipeline(self, raw_idea: str, iterations: int) -> dict:
-        proposed = self._call_llm(self._build_propose_prompt(raw_idea))
+    def _live_pipeline(self, raw_idea: str, provider_name: str, iterations: int) -> dict:
+        total_tokens = 0
+        provider = self._factory.get_provider(provider_name)
+        
+        def _call(messages):
+            nonlocal total_tokens
+            res = provider.chat_generate(messages)
+            total_tokens += res.get("tokens", 0)
+            return res.get("content", "")
+
+        proposed = _call(self._build_propose_prompt(raw_idea))
 
         critique = proposed
         for _ in range(iterations):
-            critique_text = self._call_llm(self._build_critique_prompt(raw_idea, critique))
+            critique_text = _call(self._build_critique_prompt(raw_idea, critique))
             critique = critique_text
 
-        final = self._call_llm(self._build_synthesis_prompt(raw_idea, proposed, critique))
+        final = _call(self._build_synthesis_prompt(raw_idea, proposed, critique))
 
         return {
             "mode": "live",
+            "provider_matched": provider_name,
             "iterations": iterations,
             "raw_idea": raw_idea,
             "proposed": proposed,
             "critique": critique,
             "final": final,
+            "tokens_used": total_tokens
         }
-
-    def _call_llm(self, messages: list[dict]) -> str:
-        response = self._litellm.completion(
-            model=self.MODEL,
-            messages=messages,
-            max_tokens=1500,
-            temperature=0.7,
-        )
-        return response.choices[0].message.content.strip()
 
     # -------------------------------------------------------------------
     # Prompt builders

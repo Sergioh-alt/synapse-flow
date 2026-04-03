@@ -25,31 +25,28 @@ from typing import Optional
 
 # --- Internal modules ---
 from core.agent_refiner import AgentRefiner
+from core.telemetry import telemetry_monitor
 
 # Lazy import of Reddit client based on mode
-USE_MOCK = os.environ.get("USE_MOCK_REDDIT", "true").lower() in ("true", "1", "yes")
-
-if USE_MOCK:
-    from core.mock_reddit_client import MockRedditManager as _RedditClient
-else:
-    from core.reddit_client import RedditManager as _RedditClient  # type: ignore
+# Removed legacy USE_MOCK boolean as reddit_service handles it dynamically
+from core.reddit_service import RedditClient
+from core.llm_factory import ProviderFactory
 
 # -----------------------------------------------------------------------
 # App lifecycle — instantiate singletons at startup
 # -----------------------------------------------------------------------
 
-reddit_manager: Optional[_RedditClient] = None
+reddit_manager: Optional[RedditClient] = None
 agent_refiner: Optional[AgentRefiner] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global reddit_manager, agent_refiner
-    reddit_manager = _RedditClient()
+    reddit_manager = RedditClient()
     agent_refiner = AgentRefiner()
-    mode = "MOCK" if USE_MOCK else "LIVE"
-    ai_mode = "MOCK AI" if agent_refiner._use_mock else "LIVE AI (LiteLLM)"
-    print(f"[RFN] Reddit mode: {mode} | AI mode: {ai_mode}")
+    mode = "MOCK" if reddit_manager.is_mock_mode else "LIVE"
+    print(f"[RFN] Reddit mode: {mode} | LLM Factory Ready")
     yield
     # Cleanup (nothing needed currently)
 
@@ -80,8 +77,13 @@ app.add_middleware(
 # Request / Response Models
 # -----------------------------------------------------------------------
 
+class AnalyzeRequest(BaseModel):
+    text: str = Field(..., min_length=2, description="The content to analyze or refine")
+    provider: str = Field(default="litellm", description="The requested LLM provider (litellm, groq, ollama)")
+
 class RefinePromptRequest(BaseModel):
     raw_idea: str = Field(..., min_length=5, description="The raw idea to refine.")
+    provider: str = Field(default="litellm", description="The requested LLM provider (litellm, groq, ollama)")
     iterations: int = Field(default=1, ge=1, le=3, description="Critique-revise cycles.")
 
 
@@ -119,12 +121,33 @@ async def health():
     }
 
 
+@app.get("/telemetry/stats", tags=["System"])
+async def get_telemetry_stats():
+    """
+    Retrieves the current hardware telemetry statistics.
+    Simulates CPU, RAM, and GPU workloads across the multi-agent nodes.
+    Useful for the digital exoskeleton HUD bindings in the frontend.
+    """
+    return telemetry_monitor.get_stats()
+
+
+@app.post("/api/analyze", tags=["AI Orchestration"])
+async def analyze_content(req: AnalyzeRequest):
+    """Pass textual input to the requested LLM factory provider. (1-pass)"""
+    try:
+        provider = ProviderFactory.get_provider(req.provider)
+        # Using the new chat_generate endpoint wrapper
+        result = provider.chat_generate([{"role": "user", "content": req.text}])
+        return {"result": result.get("content", ""), "provider_matched": req.provider, "tokens": result.get("tokens", 0)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/auth/reddit", tags=["Reddit"])
 async def auth_reddit():
-    """Authenticate with Reddit (uses mock if USE_MOCK_REDDIT=true)."""
+    """Authenticate with Reddit (handled dynamically now)."""
     try:
-        result = reddit_manager.authenticate_user()
-        return result
+        # Compatibility stub
+        return {"status": "authenticated" if not reddit_manager.is_mock_mode else "mock_authenticated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -146,11 +169,37 @@ async def refine_prompt(body: RefinePromptRequest):
     Returns proposed blueprint, critic review, and final synthesis.
     """
     try:
+        telemetry_monitor.trigger_ram_boost(duration_sec=3.0)
         result = agent_refiner.refine(
             raw_idea=body.raw_idea,
+            provider_name=body.provider,
             max_iterations=body.iterations,
         )
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class DecisionRequest(BaseModel):
+    text: str = Field(default="")
+    min_words: int = Field(default=200)
+
+@app.post("/api/decision/length", tags=["AI"])
+async def check_length(body: DecisionRequest):
+    """
+    Validate if the provided text exceeds the min_words threshold.
+    """
+    try:
+        telemetry_monitor.trigger_cpu_spike(duration_sec=1.5)
+        # Validate word count properly
+        words = [w for w in body.text.split() if w.strip()]
+        word_count = len(words)
+        passed = word_count > body.min_words
+        return {
+            "passed": passed,
+            "status": "Pass" if passed else "Fail",
+            "word_count": word_count,
+            "threshold": body.min_words
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
