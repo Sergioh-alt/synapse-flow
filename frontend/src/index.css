@@ -54,11 +54,34 @@ html, body, #root {
   stroke-width: 2.5 !important;
 }
 .react-flow__handle {
-  width: 10px !important;
-  height: 10px !important;
-  background: var(--neon-cyan) !important;
-  border: 2px solid var(--dark-900) !important;
+  width: 12px !important;
+  height: 12px !important;
+  padding: 10px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  z-index: 50 !important;
+  cursor: pointer !important;
+  pointer-events: all !important;
+  transition: all 0.2s ease-in-out;
+}
+.react-flow__handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: var(--neon-cyan);
+  border: 2px solid var(--dark-900);
   box-shadow: 0 0 8px var(--neon-cyan);
+  border-radius: 50%;
+}
+.react-flow__handle:hover {
+  z-index: 100 !important;
+}
+.react-flow__connection-path {
+  pointer-events: none !important;
 }
 .react-flow__controls {
   background: rgba(10, 15, 30, 0.9) !important;

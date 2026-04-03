@@ -48,6 +48,22 @@ const Sidebar = () => {
           >
             <div className="text-xs font-hud text-neon-green">🚀 Publisher</div>
           </div>
+
+          <div
+            className="p-3 border border-red-500/30 bg-red-500/10 rounded cursor-grab hover:bg-red-500/20 transition-colors"
+            onDragStart={(event) => onDragStart(event, 'hardwareNode')}
+            draggable
+          >
+            <div className="text-xs font-hud text-red-400">💻 Hardware Monitor</div>
+          </div>
+
+          <div
+            className="p-3 border border-amber-500/30 bg-amber-500/10 rounded cursor-grab hover:bg-amber-500/20 transition-colors"
+            onDragStart={(event) => onDragStart(event, 'decisionNode')}
+            draggable
+          >
+            <div className="text-xs font-hud text-amber-400 text-glow-amber">⟁ Decision Gate</div>
+          </div>
         </div>
       </div>
 
