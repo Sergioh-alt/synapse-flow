@@ -13,7 +13,7 @@ const DecisionNode = ({ id, data, selected }) => {
 
   const checkCondition = async () => {
     try {
-      const res = await axios.post('http://127.0.0.1:8000/api/decision/length', {
+      const res = await axios.post('http://127.0.0.1:8000/api/decision', {
         text: textInput,
         min_words: 200
       });

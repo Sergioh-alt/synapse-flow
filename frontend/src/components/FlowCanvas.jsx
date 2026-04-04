@@ -602,7 +602,7 @@ const FlowCanvas = ({ onNodeSelect }) => {
     return defaultEdges
   })
 
-  // Retroactive style enforcer for legacy edges
+  // Enforcer for legacy edges and globally styling decision nodes
   useEffect(() => {
     setEdges((eds) => eds.map(edge => {
       const sourceNode = nodes.find(n => n.id === edge.source);
@@ -622,7 +622,25 @@ const FlowCanvas = ({ onNodeSelect }) => {
       }
       return edge;
     }));
-  }, [nodes, setEdges]);
+
+    setNodes((nds) => nds.map(node => {
+      if (node.type === 'decisionNode' && typeof node.data?.passed === 'boolean') {
+        const expectedColor = node.data.passed ? '#00FF00' : '#FF0000';
+        if (node.style?.stroke !== expectedColor) {
+           return {
+             ...node,
+             style: { 
+               ...node.style, 
+               stroke: expectedColor,
+               borderColor: expectedColor,
+               boxShadow: `0 0 15px ${expectedColor}`
+             }
+           };
+        }
+      }
+      return node;
+    }));
+  }, [nodes, setEdges, setNodes]);
 
   useEffect(() => {
     localStorage.setItem('rfn_nodes', JSON.stringify(nodes))
